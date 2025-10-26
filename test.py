@@ -97,11 +97,13 @@ def main():
         sns.heatmap(df, cmap="RdYlBu")
         plt.savefig("./emb"+ '.pdf')
 
+    yhat_denorm = scaler.inverse_transform(yhat)
+
     y12 = realy[:,99,11].cpu().detach().numpy()
-    yhat12 = scaler.inverse_transform(yhat[:,99,11]).cpu().detach().numpy()
+    yhat12 = yhat_denorm[:,99,11].cpu().detach().numpy()
 
     y3 = realy[:,99,2].cpu().detach().numpy()
-    yhat3 = scaler.inverse_transform(yhat[:,99,2]).cpu().detach().numpy()
+    yhat3 = yhat_denorm[:,99,2].cpu().detach().numpy()
 
     df2 = pd.DataFrame({'real12':y12,'pred12':yhat12, 'real3': y3, 'pred3':yhat3})
     df2.to_csv('./wave.csv',index=False)

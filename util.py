@@ -63,6 +63,61 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 
+class LogZScoreScaler:
+    """Apply log1p followed by z-score normalization per node."""
+
+    def __init__(self, mean, std, eps=1e-6):
+        self.mean = np.asarray(mean)
+        self.std = np.maximum(np.asarray(std), eps)
+        self.num_nodes = self.mean.shape[-1]
+
+    def transform(self, data):
+        log_data = self._log1p(data)
+        mean, std = self._prepare_params(log_data)
+        return (log_data - mean) / std
+
+    def inverse_transform(self, data):
+        mean, std = self._prepare_params(data)
+        log_data = (data * std) + mean
+        return self._expm1(log_data)
+
+    def _prepare_params(self, data):
+        node_axis = self._get_node_axis(data)
+        if isinstance(data, torch.Tensor):
+            mean = torch.as_tensor(self.mean, dtype=data.dtype, device=data.device)
+            std = torch.as_tensor(self.std, dtype=data.dtype, device=data.device)
+            view_shape = [1] * data.dim()
+        else:
+            array = np.asarray(data)
+            dtype = array.dtype
+            mean = np.asarray(self.mean, dtype=dtype)
+            std = np.asarray(self.std, dtype=dtype)
+            view_shape = [1] * array.ndim
+        view_shape[node_axis] = self.num_nodes
+        mean = mean.reshape(view_shape)
+        std = std.reshape(view_shape)
+        return mean, std
+
+    def _get_node_axis(self, data):
+        shape = data.shape if not isinstance(data, torch.Tensor) else tuple(data.size())
+        for axis, size in enumerate(shape):
+            if size == self.num_nodes:
+                return axis
+        raise ValueError("Unable to determine node axis for data shape {}.".format(shape))
+
+    @staticmethod
+    def _log1p(data):
+        if isinstance(data, torch.Tensor):
+            return torch.log1p(data)
+        return np.log1p(data)
+
+    @staticmethod
+    def _expm1(data):
+        if isinstance(data, torch.Tensor):
+            return torch.expm1(data)
+        return np.expm1(data)
+
+
 
 def sym_adj(adj):
     """Symmetrically normalize adjacency matrix."""
@@ -147,7 +202,10 @@ def load_dataset(dataset_dir, batch_size, valid_batch_size= None, test_batch_siz
         cat_data = np.load(os.path.join(dataset_dir, category + '.npz'))
         data['x_' + category] = cat_data['x']
         data['y_' + category] = cat_data['y']
-    scaler = StandardScaler(mean=data['x_train'][..., 0].mean(), std=data['x_train'][..., 0].std())
+    log_train = np.log1p(data['x_train'][..., 0])
+    mean = log_train.mean(axis=(0, 1))
+    std = log_train.std(axis=(0, 1))
+    scaler = LogZScoreScaler(mean=mean, std=std)
     # Data format
     for category in ['train', 'val', 'test']:
         data['x_' + category][..., 0] = scaler.transform(data['x_' + category][..., 0])
