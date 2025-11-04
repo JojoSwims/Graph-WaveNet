@@ -1,14 +1,32 @@
 import torch.optim as optim
 from model import *
 import util
+
+
 class trainer():
-    def __init__(self, scaler, in_dim, seq_length, num_nodes, nhid , dropout, lrate, wdecay, device, supports, gcn_bool, addaptadj, aptinit):
+    def __init__(self, scaler, in_dim, seq_length, num_nodes, nhid, dropout, lrate, wdecay, device, supports,
+                 gcn_bool, addaptadj, aptinit, use_scheduler=False, scheduler_t_max=10, scheduler_eta_min=0.0):
         self.model = gwnet(device, num_nodes, dropout, supports=supports, gcn_bool=gcn_bool, addaptadj=addaptadj, aptinit=aptinit, in_dim=in_dim, out_dim=seq_length, residual_channels=nhid, dilation_channels=nhid, skip_channels=nhid * 8, end_channels=nhid * 16)
         self.model.to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lrate, weight_decay=wdecay)
         self.loss = util.masked_mae
         self.scaler = scaler
         self.clip = 5
+        self.scheduler = self._init_scheduler(use_scheduler, scheduler_t_max, scheduler_eta_min)
+
+    def _init_scheduler(self, use_scheduler, t_max, eta_min):
+        if not use_scheduler:
+            return None
+        return optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=t_max, eta_min=eta_min)
+
+    def step_scheduler(self):
+        if self.scheduler is None:
+            return None
+        self.scheduler.step()
+        return self.get_learning_rate()
+
+    def get_learning_rate(self):
+        return self.optimizer.param_groups[0]['lr']
 
     def train(self, input, real_val):
         self.model.train()

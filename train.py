@@ -30,6 +30,10 @@ parser.add_argument('--print_every',type=int,default=50,help='')
 parser.add_argument('--save',type=str,default='/dbfs/FileStore/johan/runs/cluster2',help='save path')
 parser.add_argument('--expid',type=int,default=1,help='experiment id')
 parser.add_argument('--config', type=str, default=None, help='Path to JSON config')
+parser.add_argument('--use_lr_scheduler', action='store_true', help='Enable CosineAnnealingLR during training')
+parser.add_argument('--lr_t_max', type=int, default=10, help='Number of epochs for CosineAnnealingLR to complete a cycle')
+parser.add_argument('--lr_eta_min', type=float, default=0.0, help='Minimum learning rate for CosineAnnealingLR')
+parser.add_argument('--resume', type=str, default=None, help='Path to a checkpoint for resuming training')
 parser.add_argument('--scaler_type', type=str, default='log1z', choices=['log1z', 'standard'],
                     help='Scaling strategy applied to the traffic readings')
 
@@ -88,14 +92,31 @@ def main():
 
     engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
                          args.learning_rate, args.weight_decay, device, supports, args.gcn_bool, args.addaptadj,
-                         adjinit)
+                         adjinit, use_scheduler=args.use_lr_scheduler, scheduler_t_max=args.lr_t_max,
+                         scheduler_eta_min=args.lr_eta_min)
+
+    start_epoch = 1
+    his_loss = []
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location=device)
+        if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+            engine.model.load_state_dict(checkpoint['model_state_dict'])
+            if 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict']:
+                engine.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if engine.scheduler is not None and 'scheduler_state_dict' in checkpoint and checkpoint['scheduler_state_dict']:
+                engine.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            his_loss = checkpoint.get('history', [])
+            start_epoch = checkpoint.get('epoch', 0) + 1
+        else:
+            engine.model.load_state_dict(checkpoint)
 
 
     print("start training...",flush=True)
-    his_loss =[]
+    if not his_loss:
+        his_loss = []
     val_time = []
     train_time = []
-    for i in range(1,args.epochs+1):
+    for i in range(start_epoch, args.epochs+1):
         #if i % 10 == 0:
             #lr = max(0.000002,args.learning_rate * (0.1 ** (i // 10)))
             #for g in engine.optimizer.param_groups:
@@ -150,13 +171,31 @@ def main():
 
         log = 'Epoch: {:03d}, Train Loss: {:.4f}, Train MAPE: {:.4f}, Train RMSE: {:.4f}, Valid Loss: {:.4f}, Valid MAPE: {:.4f}, Valid RMSE: {:.4f}, Training Time: {:.4f}/epoch'
         print(log.format(i, mtrain_loss, mtrain_mape, mtrain_rmse, mvalid_loss, mvalid_mape, mvalid_rmse, (t2 - t1)),flush=True)
-        torch.save(engine.model.state_dict(), args.save+"_epoch_"+str(i)+"_"+str(round(mvalid_loss,2))+".pth")
+
+        new_lr = engine.step_scheduler()
+        if new_lr is not None:
+            print(f"Updated learning rate: {new_lr:.6f}", flush=True)
+
+        checkpoint_path = args.save+"_epoch_"+str(i)+"_"+str(round(mvalid_loss,2))+".pth"
+        checkpoint = {
+            'epoch': i,
+            'model_state_dict': engine.model.state_dict(),
+            'optimizer_state_dict': engine.optimizer.state_dict(),
+            'scheduler_state_dict': engine.scheduler.state_dict() if engine.scheduler is not None else None,
+            'history': his_loss,
+        }
+        torch.save(checkpoint, checkpoint_path)
     print("Average Training Time: {:.4f} secs/epoch".format(np.mean(train_time)))
     print("Average Inference Time: {:.4f} secs".format(np.mean(val_time)))
 
     #testing
     bestid = np.argmin(his_loss)
-    engine.model.load_state_dict(torch.load(args.save+"_epoch_"+str(bestid+1)+"_"+str(round(his_loss[bestid],2))+".pth"))
+    best_checkpoint_path = args.save+"_epoch_"+str(bestid+1)+"_"+str(round(his_loss[bestid],2))+".pth"
+    best_checkpoint = torch.load(best_checkpoint_path, map_location=device)
+    if isinstance(best_checkpoint, dict) and 'model_state_dict' in best_checkpoint:
+        engine.model.load_state_dict(best_checkpoint['model_state_dict'])
+    else:
+        engine.model.load_state_dict(best_checkpoint)
 
 
     outputs = []
@@ -193,7 +232,14 @@ def main():
 
     log = 'On average over 12 horizons, Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}'
     print(log.format(np.mean(amae),np.mean(amape),np.mean(armse)))
-    torch.save(engine.model.state_dict(), args.save+"_exp"+str(args.expid)+"_best_"+str(round(his_loss[bestid],2))+".pth")
+    final_checkpoint = {
+        'epoch': bestid + 1,
+        'model_state_dict': engine.model.state_dict(),
+        'optimizer_state_dict': engine.optimizer.state_dict(),
+        'scheduler_state_dict': engine.scheduler.state_dict() if engine.scheduler is not None else None,
+        'history': his_loss,
+    }
+    torch.save(final_checkpoint, args.save+"_exp"+str(args.expid)+"_best_"+str(round(his_loss[bestid],2))+".pth")
 
 
 
