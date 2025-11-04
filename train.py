@@ -34,6 +34,8 @@ parser.add_argument('--use_lr_scheduler', action='store_true', help='Enable Cosi
 parser.add_argument('--lr_t_max', type=int, default=10, help='Number of epochs for CosineAnnealingLR to complete a cycle')
 parser.add_argument('--lr_eta_min', type=float, default=0.0, help='Minimum learning rate for CosineAnnealingLR')
 parser.add_argument('--resume', type=str, default=None, help='Path to a checkpoint for resuming training')
+parser.add_argument('--scaler_type', type=str, default='log1z', choices=['log1z', 'standard'],
+                    help='Scaling strategy applied to the traffic readings')
 
 
 args = parser.parse_args()
@@ -67,7 +69,13 @@ def main():
                 setattr(args, k, v)
     device = torch.device(args.device)
     sensor_ids, sensor_id_to_ind, adj_mx = util.load_adj(args.adjdata,args.adjtype)
-    dataloader = util.load_dataset(args.data, args.batch_size, args.batch_size, args.batch_size)
+    dataloader = util.load_dataset(
+        args.data,
+        args.batch_size,
+        args.batch_size,
+        args.batch_size,
+        scaler_type=args.scaler_type,
+    )
     scaler = dataloader['scaler']
     supports = [torch.tensor(i).to(device) for i in adj_mx]
 

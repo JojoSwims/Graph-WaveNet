@@ -25,6 +25,8 @@ parser.add_argument('--dropout',type=float,default=0.3,help='dropout rate')
 parser.add_argument('--weight_decay',type=float,default=0.0001,help='weight decay rate')
 parser.add_argument('--checkpoint',type=str,help='')
 parser.add_argument('--plotheatmap',type=str,default='True',help='')
+parser.add_argument('--scaler_type', type=str, default='log1z', choices=['log1z', 'standard'],
+                    help='Scaling strategy applied to the traffic readings')
 
 
 args = parser.parse_args()
@@ -57,7 +59,13 @@ def main():
 
     print('model load successfully')
 
-    dataloader = util.load_dataset(args.data, args.batch_size, args.batch_size, args.batch_size)
+    dataloader = util.load_dataset(
+        args.data,
+        args.batch_size,
+        args.batch_size,
+        args.batch_size,
+        scaler_type=args.scaler_type,
+    )
     scaler = dataloader['scaler']
     outputs = []
     realy = torch.Tensor(dataloader['y_test']).to(device)
