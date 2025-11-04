@@ -24,6 +24,9 @@ parser.add_argument('--batch_size',type=int,default=64,help='batch size')
 parser.add_argument('--learning_rate',type=float,default=0.001,help='learning rate')
 parser.add_argument('--dropout',type=float,default=0.3,help='dropout rate')
 parser.add_argument('--weight_decay',type=float,default=0.0001,help='weight decay rate')
+parser.add_argument('--use_lr_scheduler', action='store_true', help='Use cosine annealing learning rate scheduler')
+parser.add_argument('--lr_t_max', type=int, default=100, help='Number of iterations for cosine annealing cycle')
+parser.add_argument('--lr_eta_min', type=float, default=1e-5, help='Minimum learning rate for cosine annealing scheduler')
 parser.add_argument('--epochs',type=int,default=100,help='')
 parser.add_argument('--print_every',type=int,default=50,help='')
 #parser.add_argument('--seed',type=int,default=99,help='random seed')
@@ -88,9 +91,25 @@ def main():
 
 
 
-    engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
-                         args.learning_rate, args.weight_decay, device, supports, args.gcn_bool, args.addaptadj,
-                         adjinit, loss_fn=args.loss_fn)
+    engine = trainer(
+        scaler,
+        args.in_dim,
+        args.seq_length,
+        args.num_nodes,
+        args.nhid,
+        args.dropout,
+        args.learning_rate,
+        args.weight_decay,
+        device,
+        supports,
+        args.gcn_bool,
+        args.addaptadj,
+        adjinit,
+        loss_fn=args.loss_fn,
+        use_lr_scheduler=args.use_lr_scheduler,
+        lr_t_max=args.lr_t_max,
+        lr_eta_min=args.lr_eta_min,
+    )
 
 
     print("start training...",flush=True)
@@ -150,8 +169,10 @@ def main():
         mvalid_rmse = np.mean(valid_rmse)
         his_loss.append(mvalid_loss)
 
-        log = 'Epoch: {:03d}, Train Loss: {:.4f}, Train MAPE: {:.4f}, Train RMSE: {:.4f}, Valid Loss: {:.4f}, Valid MAPE: {:.4f}, Valid RMSE: {:.4f}, Training Time: {:.4f}/epoch'
-        print(log.format(i, mtrain_loss, mtrain_mape, mtrain_rmse, mvalid_loss, mvalid_mape, mvalid_rmse, (t2 - t1)),flush=True)
+        current_lr = engine.get_learning_rate()
+        log = 'Epoch: {:03d}, LR: {:.6f}, Train Loss: {:.4f}, Train MAPE: {:.4f}, Train RMSE: {:.4f}, Valid Loss: {:.4f}, Valid MAPE: {:.4f}, Valid RMSE: {:.4f}, Training Time: {:.4f}/epoch'
+        print(log.format(i, current_lr, mtrain_loss, mtrain_mape, mtrain_rmse, mvalid_loss, mvalid_mape, mvalid_rmse, (t2 - t1)),flush=True)
+        engine.step_lr_scheduler()
         torch.save(engine.model.state_dict(), args.save+"_epoch_"+str(i)+"_"+str(round(mvalid_loss,2))+".pth")
     print("Average Training Time: {:.4f} secs/epoch".format(np.mean(train_time)))
     print("Average Inference Time: {:.4f} secs".format(np.mean(val_time)))

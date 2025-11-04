@@ -2,10 +2,36 @@ import torch.optim as optim
 from model import *
 import util
 class trainer():
-    def __init__(self, scaler, in_dim, seq_length, num_nodes, nhid , dropout, lrate, wdecay, device, supports, gcn_bool, addaptadj, aptinit, loss_fn='mae'):
+    def __init__(
+        self,
+        scaler,
+        in_dim,
+        seq_length,
+        num_nodes,
+        nhid,
+        dropout,
+        lrate,
+        wdecay,
+        device,
+        supports,
+        gcn_bool,
+        addaptadj,
+        aptinit,
+        loss_fn='mae',
+        use_lr_scheduler=False,
+        lr_t_max=100,
+        lr_eta_min=1e-5,
+    ):
         self.model = gwnet(device, num_nodes, dropout, supports=supports, gcn_bool=gcn_bool, addaptadj=addaptadj, aptinit=aptinit, in_dim=in_dim, out_dim=seq_length, residual_channels=nhid, dilation_channels=nhid, skip_channels=nhid * 8, end_channels=nhid * 16)
         self.model.to(device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lrate, weight_decay=wdecay)
+        self.lr_scheduler = None
+        if use_lr_scheduler:
+            self.lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=lr_t_max,
+                eta_min=lr_eta_min,
+            )
         self.loss = self._select_loss(loss_fn)
         self.scaler = scaler
         self.clip = 5
@@ -50,3 +76,10 @@ class trainer():
         mape = util.masked_mape(predict,real,0.0).item()
         rmse = util.masked_rmse(predict,real,0.0).item()
         return loss.item(),mape,rmse
+
+    def step_lr_scheduler(self):
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+
+    def get_learning_rate(self):
+        return self.optimizer.param_groups[0]['lr']
