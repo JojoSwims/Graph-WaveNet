@@ -37,4 +37,11 @@ python generate_training_data.py --output_dir=data/PEMS-BAY --traffic_df_filenam
 python train.py --gcn_bool --adjtype doubletransition --addaptadj  --randomadj
 ```
 
+### Scaling options
+
+Traffic readings are log-normalized by default. To switch to a standard z-score
+scaler, supply `--scaler_type standard` on the command line or set
+`"scaler_type": "standard"` inside a JSON config file passed via
+`--config`.
+
 

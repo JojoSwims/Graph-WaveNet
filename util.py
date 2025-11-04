@@ -48,19 +48,43 @@ class DataLoader(object):
         return _wrapper()
 
 class StandardScaler():
-    """
-    Standard the input
-    """
+    """Standard z-score normalization for per-node features."""
 
-    def __init__(self, mean, std):
-        self.mean = mean
-        self.std = std
+    def __init__(self, mean, std, eps=1e-6):
+        self.mean = np.asarray(mean)
+        self.std = np.maximum(np.asarray(std), eps)
+        self.num_nodes = self.mean.shape[-1]
 
     def transform(self, data):
-        return (data - self.mean) / self.std
+        mean, std = self._prepare_params(data)
+        return (data - mean) / std
 
     def inverse_transform(self, data):
-        return (data * self.std) + self.mean
+        mean, std = self._prepare_params(data)
+        return (data * std) + mean
+
+    def _prepare_params(self, data):
+        node_axis = self._get_node_axis(data)
+        if isinstance(data, torch.Tensor):
+            mean = torch.as_tensor(self.mean, dtype=data.dtype, device=data.device)
+            std = torch.as_tensor(self.std, dtype=data.dtype, device=data.device)
+            view_shape = [1] * data.dim()
+        else:
+            array = np.asarray(data)
+            mean = np.asarray(self.mean, dtype=array.dtype)
+            std = np.asarray(self.std, dtype=array.dtype)
+            view_shape = [1] * array.ndim
+        view_shape[node_axis] = self.num_nodes
+        mean = mean.reshape(view_shape)
+        std = std.reshape(view_shape)
+        return mean, std
+
+    def _get_node_axis(self, data):
+        shape = data.shape if not isinstance(data, torch.Tensor) else tuple(data.size())
+        for axis, size in enumerate(shape):
+            if size == self.num_nodes:
+                return axis
+        raise ValueError("Unable to determine node axis for data shape {}.".format(shape))
 
 
 class LogZScoreScaler:
@@ -196,19 +220,35 @@ def load_adj(pkl_filename, adjtype):
     return sensor_ids, sensor_id_to_ind, adj
 
 
-def load_dataset(dataset_dir, batch_size, valid_batch_size= None, test_batch_size=None):
+def load_dataset(
+        dataset_dir,
+        batch_size,
+        valid_batch_size=None,
+        test_batch_size=None,
+        scaler_type='log1z'):
     data = {}
     for category in ['train', 'val', 'test']:
         cat_data = np.load(os.path.join(dataset_dir, category + '.npz'))
         data['x_' + category] = cat_data['x']
         data['y_' + category] = cat_data['y']
-    log_train = np.log1p(data['x_train'][..., 0])
-    mean = log_train.mean(axis=(0, 1))
-    std = log_train.std(axis=(0, 1))
-    scaler = LogZScoreScaler(mean=mean, std=std)
-    # Data format
+    target_train = data['x_train'][..., 0]
+    if scaler_type == 'log1z':
+        log_train = np.log1p(target_train)
+        mean = log_train.mean(axis=(0, 1))
+        std = log_train.std(axis=(0, 1))
+        scaler = LogZScoreScaler(mean=mean, std=std)
+        transform = scaler.transform
+    elif scaler_type == 'standard':
+        mean = target_train.mean(axis=(0, 1))
+        std = target_train.std(axis=(0, 1))
+        std = np.maximum(std, 1e-6)
+        scaler = StandardScaler(mean=mean, std=std)
+        transform = scaler.transform
+    else:
+        raise ValueError("Unsupported scaler_type '{}'.".format(scaler_type))
+
     for category in ['train', 'val', 'test']:
-        data['x_' + category][..., 0] = scaler.transform(data['x_' + category][..., 0])
+        data['x_' + category][..., 0] = transform(data['x_' + category][..., 0])
     data['train_loader'] = DataLoader(data['x_train'], data['y_train'], batch_size)
     data['val_loader'] = DataLoader(data['x_val'], data['y_val'], valid_batch_size)
     data['test_loader'] = DataLoader(data['x_test'], data['y_test'], test_batch_size)
