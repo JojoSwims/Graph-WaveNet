@@ -307,3 +307,21 @@ def metric(pred, real):
     return mae,mape,rmse
 
 
+def masked_huber(preds, labels, null_val=np.nan, delta=1.0):
+    if np.isnan(null_val):
+        mask = ~torch.isnan(labels)
+    else:
+        mask = (labels != null_val)
+    mask = mask.float()
+    mask /= torch.mean(mask)
+    mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
+    abs_diff = torch.abs(preds - labels)
+    delta_tensor = torch.tensor(delta, dtype=abs_diff.dtype, device=abs_diff.device)
+    quadratic = torch.where(abs_diff < delta_tensor, 0.5 * abs_diff ** 2 / delta_tensor, torch.zeros_like(abs_diff))
+    linear = torch.where(abs_diff >= delta_tensor, abs_diff - 0.5 * delta_tensor, torch.zeros_like(abs_diff))
+    loss = quadratic + linear
+    loss = loss * mask
+    loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
+    return torch.mean(loss)
+
+

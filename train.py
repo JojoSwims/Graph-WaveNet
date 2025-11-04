@@ -32,6 +32,8 @@ parser.add_argument('--expid',type=int,default=1,help='experiment id')
 parser.add_argument('--config', type=str, default=None, help='Path to JSON config')
 parser.add_argument('--scaler_type', type=str, default='log1z', choices=['log1z', 'standard'],
                     help='Scaling strategy applied to the traffic readings')
+parser.add_argument('--loss_fn', type=str, default='mae', choices=['mae', 'huber'],
+                    help='Loss function to optimize during training')
 
 
 args = parser.parse_args()
@@ -88,7 +90,7 @@ def main():
 
     engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
                          args.learning_rate, args.weight_decay, device, supports, args.gcn_bool, args.addaptadj,
-                         adjinit)
+                         adjinit, loss_fn=args.loss_fn)
 
 
     print("start training...",flush=True)
