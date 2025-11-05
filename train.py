@@ -33,8 +33,6 @@ parser.add_argument('--print_every',type=int,default=50,help='')
 parser.add_argument('--save',type=str,default='/dbfs/FileStore/johan/runs/cluster2',help='save path')
 parser.add_argument('--expid',type=int,default=1,help='experiment id')
 parser.add_argument('--config', type=str, default=None, help='Path to JSON config')
-parser.add_argument('--scaler_type', type=str, default='log1z', choices=['log1z', 'standard'],
-                    help='Scaling strategy applied to the traffic readings')
 parser.add_argument('--loss_fn', type=str, default='mae', choices=['mae', 'huber'],
                     help='Loss function to optimize during training')
 
@@ -75,7 +73,6 @@ def main():
         args.batch_size,
         args.batch_size,
         args.batch_size,
-        scaler_type=args.scaler_type,
     )
     scaler = dataloader['scaler']
     supports = [torch.tensor(i).to(device) for i in adj_mx]
