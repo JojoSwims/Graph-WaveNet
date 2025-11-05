@@ -48,43 +48,19 @@ class DataLoader(object):
         return _wrapper()
 
 class StandardScaler():
-    """Standard z-score normalization for per-node features."""
+    """
+    Standard the input
+    """
 
-    def __init__(self, mean, std, eps=1e-6):
-        self.mean = np.asarray(mean)
-        self.std = np.maximum(np.asarray(std), eps)
-        self.num_nodes = self.mean.shape[-1]
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
 
     def transform(self, data):
-        mean, std = self._prepare_params(data)
-        return (data - mean) / std
+        return (data - self.mean) / self.std
 
     def inverse_transform(self, data):
-        mean, std = self._prepare_params(data)
-        return (data * std) + mean
-
-    def _prepare_params(self, data):
-        node_axis = self._get_node_axis(data)
-        if isinstance(data, torch.Tensor):
-            mean = torch.as_tensor(self.mean, dtype=data.dtype, device=data.device)
-            std = torch.as_tensor(self.std, dtype=data.dtype, device=data.device)
-            view_shape = [1] * data.dim()
-        else:
-            array = np.asarray(data)
-            mean = np.asarray(self.mean, dtype=array.dtype)
-            std = np.asarray(self.std, dtype=array.dtype)
-            view_shape = [1] * array.ndim
-        view_shape[node_axis] = self.num_nodes
-        mean = mean.reshape(view_shape)
-        std = std.reshape(view_shape)
-        return mean, std
-
-    def _get_node_axis(self, data):
-        shape = data.shape if not isinstance(data, torch.Tensor) else tuple(data.size())
-        for axis, size in enumerate(shape):
-            if size == self.num_nodes:
-                return axis
-        raise ValueError("Unable to determine node axis for data shape {}.".format(shape))
+        return (data * self.std) + self.mean
 
 
 class LogZScoreScaler:
