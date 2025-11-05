@@ -220,35 +220,16 @@ def load_adj(pkl_filename, adjtype):
     return sensor_ids, sensor_id_to_ind, adj
 
 
-def load_dataset(
-        dataset_dir,
-        batch_size,
-        valid_batch_size=None,
-        test_batch_size=None,
-        scaler_type='log1z'):
+def load_dataset(dataset_dir, batch_size, valid_batch_size= None, test_batch_size=None):
     data = {}
     for category in ['train', 'val', 'test']:
         cat_data = np.load(os.path.join(dataset_dir, category + '.npz'))
         data['x_' + category] = cat_data['x']
         data['y_' + category] = cat_data['y']
-    target_train = data['x_train'][..., 0]
-    if scaler_type == 'log1z':
-        log_train = np.log1p(target_train)
-        mean = log_train.mean(axis=(0, 1))
-        std = log_train.std(axis=(0, 1))
-        scaler = LogZScoreScaler(mean=mean, std=std)
-        transform = scaler.transform
-    elif scaler_type == 'standard':
-        mean = target_train.mean(axis=(0, 1))
-        std = target_train.std(axis=(0, 1))
-        std = np.maximum(std, 1e-6)
-        scaler = StandardScaler(mean=mean, std=std)
-        transform = scaler.transform
-    else:
-        raise ValueError("Unsupported scaler_type '{}'.".format(scaler_type))
-
+    scaler = StandardScaler(mean=data['x_train'][..., 0].mean(), std=data['x_train'][..., 0].std())
+    # Data format
     for category in ['train', 'val', 'test']:
-        data['x_' + category][..., 0] = transform(data['x_' + category][..., 0])
+        data['x_' + category][..., 0] = scaler.transform(data['x_' + category][..., 0])
     data['train_loader'] = DataLoader(data['x_train'], data['y_train'], batch_size)
     data['val_loader'] = DataLoader(data['x_val'], data['y_val'], valid_batch_size)
     data['test_loader'] = DataLoader(data['x_test'], data['y_test'], test_batch_size)
