@@ -188,7 +188,9 @@ def main():
         testx = testx.transpose(1,3)
         with torch.no_grad():
             preds = engine.model(testx).transpose(1,3)
-        outputs.append(preds.squeeze())
+        # Keep the temporal horizon dimension even when it equals 1 by
+        # squeezing only the singleton feature axis.
+        outputs.append(preds.squeeze(-1))
 
     yhat = torch.cat(outputs,dim=0)
     yhat = yhat[:realy.size(0),...]
@@ -201,7 +203,8 @@ def main():
     amae = []
     amape = []
     armse = []
-    for i in range(12):
+    horizon = yhat.size(-1)
+    for i in range(horizon):
         pred = scaler.inverse_transform(yhat[:,:,i])
         real = realy[:,:,i]
         metrics = util.metric(pred,real)
@@ -211,8 +214,8 @@ def main():
         amape.append(metrics[1])
         armse.append(metrics[2])
 
-    log = 'On average over 12 horizons, Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}'
-    print(log.format(np.mean(amae),np.mean(amape),np.mean(armse)))
+    log = 'On average over {:d} horizons, Test MAE: {:.4f}, Test MAPE: {:.4f}, Test RMSE: {:.4f}'
+    print(log.format(horizon, np.mean(amae),np.mean(amape),np.mean(armse)))
     torch.save(engine.model.state_dict(), args.save+"_exp"+str(args.expid)+"_best_"+str(round(his_loss[bestid],2))+".pth")
 
 
